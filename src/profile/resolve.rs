@@ -1,7 +1,9 @@
 //! Profile resolution from a starting directory.
 
+use crate::config::Config;
 use crate::paths::MARKER_FILENAME;
 use anyhow::Result;
+use globset::Glob;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -26,6 +28,19 @@ fn read_marker(path: &Path) -> Result<Option<String>> {
     let contents = fs::read_to_string(path).unwrap_or_default();
     let trimmed = contents.lines().next().unwrap_or("").trim();
     if trimmed.is_empty() { Ok(None) } else { Ok(Some(trimmed.to_string())) }
+}
+
+pub fn find_config_profile(cwd: &Path, config: &Config) -> Option<String> {
+    let canonical = fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
+    for (pattern, profile) in &config.directories {
+        let expanded = shellexpand::full(pattern).ok()?.into_owned();
+        let matcher = match Glob::new(&expanded) {
+            Ok(g) => g.compile_matcher(),
+            Err(_) => continue,
+        };
+        if matcher.is_match(&canonical) { return Some(profile.clone()); }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -70,5 +85,24 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::create_dir(tmp.path().join(".ccdirenv")).unwrap();
         assert_eq!(find_marker_profile(tmp.path()).unwrap(), None);
+    }
+
+    #[test]
+    fn first_match_wins() {
+        let tmp = TempDir::new().unwrap();
+        let root = fs::canonicalize(tmp.path()).unwrap();
+        let dir = root.join("a").join("b");
+        fs::create_dir_all(&dir).unwrap();
+        let mut cfg = Config::default();
+        cfg.directories.insert(format!("{}/**", root.display()), "first".into());
+        cfg.directories.insert(format!("{}/a/**", root.display()), "second".into());
+        assert_eq!(find_config_profile(&dir, &cfg), Some("first".into()));
+    }
+
+    #[test]
+    fn no_match_returns_none() {
+        let tmp = TempDir::new().unwrap();
+        let cfg = Config::default();
+        assert_eq!(find_config_profile(tmp.path(), &cfg), None);
     }
 }
