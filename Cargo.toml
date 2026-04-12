@@ -1,0 +1,38 @@
+[package]
+name = "ccdirenv"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+description = "direnv-style automatic Claude Code account switching"
+repository = "https://github.com/SuguruOoki/ccdirenv"
+readme = "README.md"
+keywords = ["claude", "claude-code", "profile", "direnv", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "ccdirenv"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+globset = "0.4"
+indexmap = { version = "2", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+which = "6"
+shellexpand = "3"
+dirs = "5"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+serial_test = "3"
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
