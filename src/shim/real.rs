@@ -9,14 +9,19 @@ pub fn path_without(skip: &Path) -> String {
     let entries: Vec<PathBuf> = env::var_os("PATH")
         .map(|p| env::split_paths(&p).collect())
         .unwrap_or_default();
-    let filtered: Vec<PathBuf> = entries.into_iter().filter(|entry| {
-        if entry == skip { return false; }
-        match std::fs::canonicalize(entry) {
-            Ok(c) if Some(&c) == skip_canonical.as_ref() => false,
-            _ => true,
-        }
-    }).collect();
-    env::join_paths(filtered).ok().and_then(|s| s.into_string().ok()).unwrap_or_default()
+    let filtered: Vec<PathBuf> = entries
+        .into_iter()
+        .filter(|entry| {
+            if entry == skip {
+                return false;
+            }
+            !matches!(std::fs::canonicalize(entry), Ok(c) if Some(&c) == skip_canonical.as_ref())
+        })
+        .collect();
+    env::join_paths(filtered)
+        .ok()
+        .and_then(|s| s.into_string().ok())
+        .unwrap_or_default()
 }
 
 pub fn locate_real_claude(shim_dir: &Path) -> Result<PathBuf> {

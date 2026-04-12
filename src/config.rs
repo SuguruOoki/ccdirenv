@@ -13,11 +13,16 @@ pub struct Config {
     pub directories: indexmap::IndexMap<String, String>,
 }
 
-fn default_profile_name() -> String { "default".to_string() }
+fn default_profile_name() -> String {
+    "default".to_string()
+}
 
 impl Default for Config {
     fn default() -> Self {
-        Self { default_profile: default_profile_name(), directories: indexmap::IndexMap::new() }
+        Self {
+            default_profile: default_profile_name(),
+            directories: indexmap::IndexMap::new(),
+        }
     }
 }
 
@@ -32,7 +37,9 @@ impl Config {
 
     pub fn save(&self, path: &Path) -> Result<()> {
         let s = toml::to_string_pretty(self)?;
-        if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         fs::write(path, s)?;
         Ok(())
     }
@@ -81,8 +88,10 @@ default_profile = "personal"
     fn save_and_reload_roundtrip() {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("config.toml");
-        let mut cfg = Config::default();
-        cfg.default_profile = "personal".into();
+        let mut cfg = Config {
+            default_profile: "personal".into(),
+            ..Config::default()
+        };
         cfg.directories.insert("~/work/**".into(), "work".into());
         cfg.save(&path).unwrap();
         let reloaded = Config::load(&path).unwrap();

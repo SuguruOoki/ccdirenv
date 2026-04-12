@@ -54,7 +54,10 @@ mod tests {
     #[serial]
     fn profile_dir_joins_name() {
         std::env::set_var("CCDIRENV_HOME", "/x");
-        assert_eq!(profile_dir("work").unwrap(), PathBuf::from("/x/profiles/work"));
+        assert_eq!(
+            profile_dir("work").unwrap(),
+            PathBuf::from("/x/profiles/work")
+        );
         std::env::remove_var("CCDIRENV_HOME");
     }
 }

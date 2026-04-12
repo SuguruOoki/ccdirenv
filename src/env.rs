@@ -6,15 +6,22 @@ pub const DISABLE: &str = "CCDIRENV_DISABLE";
 pub const FORCE_PROFILE: &str = "CCDIRENV_PROFILE";
 pub const DEBUG: &str = "CCDIRENV_DEBUG";
 
-pub fn is_disabled() -> bool { truthy(DISABLE) }
-pub fn is_debug() -> bool { truthy(DEBUG) }
+pub fn is_disabled() -> bool {
+    truthy(DISABLE)
+}
+pub fn is_debug() -> bool {
+    truthy(DEBUG)
+}
 
 pub fn forced_profile() -> Option<String> {
     env::var(FORCE_PROFILE).ok().filter(|s| !s.is_empty())
 }
 
 fn truthy(key: &str) -> bool {
-    matches!(env::var(key).as_deref(), Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES"))
+    matches!(
+        env::var(key).as_deref(),
+        Ok("1") | Ok("true") | Ok("TRUE") | Ok("yes") | Ok("YES")
+    )
 }
 
 #[cfg(test)]
