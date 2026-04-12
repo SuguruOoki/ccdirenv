@@ -43,6 +43,13 @@ pub fn find_config_profile(cwd: &Path, config: &Config) -> Option<String> {
     None
 }
 
+pub fn resolve(cwd: &Path, config: &Config) -> String {
+    if let Some(forced) = crate::env::forced_profile() { return forced; }
+    if let Ok(Some(name)) = find_marker_profile(cwd) { return name; }
+    if let Some(name) = find_config_profile(cwd, config) { return name; }
+    config.default_profile.clone()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -104,5 +111,37 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let cfg = Config::default();
         assert_eq!(find_config_profile(tmp.path(), &cfg), None);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn forced_env_wins() {
+        std::env::set_var("CCDIRENV_PROFILE", "forced");
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join(".ccdirenv"), "marker\n").unwrap();
+        let cfg = Config::default();
+        assert_eq!(resolve(tmp.path(), &cfg), "forced");
+        std::env::remove_var("CCDIRENV_PROFILE");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn default_when_nothing() {
+        std::env::remove_var("CCDIRENV_PROFILE");
+        let tmp = TempDir::new().unwrap();
+        let mut cfg = Config::default();
+        cfg.default_profile = "myDefault".into();
+        assert_eq!(resolve(tmp.path(), &cfg), "myDefault");
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn marker_beats_config() {
+        std::env::remove_var("CCDIRENV_PROFILE");
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join(".ccdirenv"), "marker-wins\n").unwrap();
+        let mut cfg = Config::default();
+        cfg.directories.insert(format!("{}/**", tmp.path().display()), "cfg".into());
+        assert_eq!(resolve(tmp.path(), &cfg), "marker-wins");
     }
 }
