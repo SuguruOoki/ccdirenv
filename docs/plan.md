@@ -862,13 +862,6 @@ git add src/shim/real.rs
 git commit -m "feat(shim): locate real claude via PATH minus shim dir"
 ```
 
-(Plan continues in `plan-part2.md`.)
-# ccdirenv Implementation Plan (Part 2)
-
-Phase 3 — shim binary wiring. Continues from `docs/plan.md`. Phase 4+ is in `docs/plan-part3.md`.
-
----
-
 ## Phase 3 — Shim binary wiring
 
 ### Task 11: `shim::replace` + shim entry + integration tests
@@ -1113,13 +1106,6 @@ cargo test --test shim_integration
 git add src/main.rs src/shim/ tests/
 git commit -m "feat(shim): wire argv0 dispatch and CLAUDE_CONFIG_DIR handoff"
 ```
-
-(Continues in `docs/plan-part3.md`.)
-# ccdirenv Implementation Plan (Part 3)
-
-Covers Phase 4 (manager CLI) and Phase 5 (release). Continues from Part 2.
-
----
 
 ## Phase 4 — Manager CLI
 
