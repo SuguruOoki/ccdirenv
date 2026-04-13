@@ -6,6 +6,7 @@ rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 description = "direnv-style automatic Claude Code account switching"
 repository = "https://github.com/SuguruOoki/ccdirenv"
+homepage = "https://github.com/SuguruOoki/ccdirenv"
 readme = "README.md"
 keywords = ["claude", "claude-code", "profile", "direnv", "cli"]
 categories = ["command-line-utilities", "development-tools"]
@@ -36,3 +37,8 @@ serial_test = "3"
 strip = true
 lto = "thin"
 codegen-units = 1
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
