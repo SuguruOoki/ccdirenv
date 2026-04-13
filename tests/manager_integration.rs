@@ -35,3 +35,25 @@ fn which_prints_marker_profile() {
         .unwrap();
     assert!(String::from_utf8_lossy(&output.stdout).starts_with("work\t"));
 }
+
+#[test]
+fn list_shows_profiles_and_emails() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path().join(".ccdirenv");
+    std::fs::create_dir_all(home.join("profiles/default")).unwrap();
+    std::fs::create_dir_all(home.join("profiles/work")).unwrap();
+    std::fs::write(
+        home.join("profiles/work/.claude.json"),
+        r#"{"oauthAccount":{"emailAddress":"work@example.com"}}"#,
+    )
+    .unwrap();
+    let output = Command::cargo_bin("ccdirenv")
+        .unwrap()
+        .arg("list")
+        .env("CCDIRENV_HOME", &home)
+        .output()
+        .unwrap();
+    let s = String::from_utf8_lossy(&output.stdout);
+    assert!(s.contains("default"));
+    assert!(s.contains("work@example.com"));
+}
