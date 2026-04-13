@@ -57,3 +57,35 @@ fn list_shows_profiles_and_emails() {
     assert!(s.contains("default"));
     assert!(s.contains("work@example.com"));
 }
+
+#[test]
+fn use_and_unuse_roundtrip() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path().join(".ccdirenv");
+    std::fs::create_dir_all(home.join("profiles/work")).unwrap();
+    let cwd = tmp.path().join("proj");
+    std::fs::create_dir_all(&cwd).unwrap();
+
+    Command::cargo_bin("ccdirenv")
+        .unwrap()
+        .args(["use", "work"])
+        .current_dir(&cwd)
+        .env("CCDIRENV_HOME", &home)
+        .assert()
+        .success();
+    assert_eq!(
+        std::fs::read_to_string(cwd.join(".ccdirenv"))
+            .unwrap()
+            .trim(),
+        "work"
+    );
+
+    Command::cargo_bin("ccdirenv")
+        .unwrap()
+        .arg("unuse")
+        .current_dir(&cwd)
+        .env("CCDIRENV_HOME", &home)
+        .assert()
+        .success();
+    assert!(!cwd.join(".ccdirenv").exists());
+}
