@@ -89,3 +89,23 @@ fn use_and_unuse_roundtrip() {
         .success();
     assert!(!cwd.join(".ccdirenv").exists());
 }
+
+#[test]
+fn import_copies_tree() {
+    let tmp = TempDir::new().unwrap();
+    let home = tmp.path().join(".ccdirenv");
+    let user_home = tmp.path().join("home");
+    let source = user_home.join(".claude");
+    std::fs::create_dir_all(source.join("projects/x")).unwrap();
+    std::fs::write(source.join(".claude.json"), "{}").unwrap();
+
+    Command::cargo_bin("ccdirenv")
+        .unwrap()
+        .args(["import", "default"])
+        .env("CCDIRENV_HOME", &home)
+        .env("HOME", &user_home)
+        .assert()
+        .success();
+    assert!(home.join("profiles/default/.claude.json").is_file());
+    assert!(home.join("profiles/default/projects/x").is_dir());
+}
