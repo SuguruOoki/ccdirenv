@@ -4,6 +4,8 @@
 [![crates.io](https://img.shields.io/crates/v/ccdirenv.svg)](https://crates.io/crates/ccdirenv)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
+**English | [日本語](./README.ja.md)**
+
 > direnv-style automatic Claude Code account switching. The right account, just by `cd`-ing in.
 
 `ccdirenv` transparently selects the correct Claude Code account based on the current working directory. No manual switch command, no shell gymnastics — just `cd` into a project and `claude` launches under the right identity.
