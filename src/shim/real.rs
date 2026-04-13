@@ -26,12 +26,27 @@ pub fn path_without(skip: &Path) -> String {
 
 pub fn locate_real_claude(shim_dir: &Path) -> Result<PathBuf> {
     let cleaned = path_without(shim_dir);
-    let found = which::which_in("claude", Some(cleaned), env::current_dir()?)
-        .context("`claude` not found in PATH (after excluding shim dir)")?;
-    if found == shim_dir.join("claude") {
-        return Err(anyhow!("resolved back to shim; PATH misconfigured"));
+    let me_canonical = env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::canonicalize(&p).ok());
+
+    let candidates = which::which_in_all("claude", Some(&cleaned), env::current_dir()?)
+        .context("PATH search failed")?;
+
+    for candidate in candidates {
+        if candidate == shim_dir.join("claude") {
+            continue;
+        }
+        if let Ok(canon) = std::fs::canonicalize(&candidate) {
+            if Some(&canon) == me_canonical.as_ref() {
+                continue;
+            }
+        }
+        return Ok(candidate);
     }
-    Ok(found)
+    Err(anyhow!(
+        "`claude` not found in PATH (after skipping shim and self-matches)"
+    ))
 }
 
 #[cfg(test)]
