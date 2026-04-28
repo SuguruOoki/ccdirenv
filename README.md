@@ -6,15 +6,20 @@
 
 **English | [日本語](./README.ja.md)**
 
-> direnv-style automatic Claude Code account switching, built around [ghq](https://github.com/x-motemen/ghq). The right account, just by `cd`-ing in.
+> direnv-style automatic Claude Code account switching. The right account, just by `cd`-ing in. Works whether you use [ghq](https://github.com/x-motemen/ghq), plain git, or both.
 
-`ccdirenv` selects the correct Claude Code account based on the current directory. The primary workflow is **ghq-aware**: every repository you `ghq get` under a configured GitHub owner (or any host/owner pair) automatically resolves to the matching profile — no per-repo setup, no shell wrappers.
+`ccdirenv` selects the correct Claude Code account based on the current directory. Map a GitHub owner to a profile once, and every repository under that owner — present and future — uses the right Claude Code account automatically. Personal repos go to your personal account, work repos go to your work account, client repos go to the client account.
 
-## Why
+## Two ways to find the right repo
 
-If you use ghq, your repositories already live under a predictable layout: `~/ghq/<host>/<owner>/<repo>`. ccdirenv hooks into that layout. Map an owner to a profile once, and every present-and-future repository under that owner uses the right Claude Code account automatically. Personal repos go to your personal account, work repos go to your work account, client repos go to the client account.
+You pick at install time:
 
-ghq isn't required — directory globs and per-repo markers still work — but the project assumes ghq as the default mental model and is optimized for it.
+- **git mode (default)** — every repository with a git remote works, anywhere on disk. ccdirenv reads `.git/config` directly (no `git` subprocess), follows worktrees and submodules, and looks up `<host>/<owner>` from `origin`.
+- **ghq mode** — fastest. ccdirenv extracts `<host>/<owner>` from the path layout `~/ghq/<host>/<owner>/<repo>` without touching any files. Recommended if you already use ghq.
+- **both** — try one method, fall back to the other. Useful if some repos live under ghq and others don't.
+- **off** — no automatic detection; only `[directories]` globs and `.ccdirenv` markers.
+
+The same shared owner→profile map (`[owners]`) powers all modes.
 
 ## How it works
 
@@ -24,7 +29,7 @@ ghq isn't required — directory globs and per-repo markers still work — but t
    1. `CCDIRENV_PROFILE` environment variable (force override)
    2. `.ccdirenv` marker file in the current directory or any parent
    3. `~/.ccdirenv/config.toml` glob patterns under `[directories]`
-   4. **`[ghq.owners]` mapping (`<host>/<owner>` lookup against the ghq root)**
+   4. **owner discovery** (git and/or ghq, in `discovery_priority` order) → `[owners]` lookup
    5. `default_profile` from `config.toml`, falling back to `default`
 
 Claude Code's own installation and auto-update path are never touched — the shim only adds an entry earlier in `PATH` and execs whatever `claude` it finds after stripping itself.
@@ -44,14 +49,19 @@ brew tap SuguruOoki/tap
 brew install ccdirenv
 ```
 
-This project assumes you have [ghq](https://github.com/x-motemen/ghq) installed. **`ccdirenv init` will install ghq for you** if it's not already on `PATH` — it tries Homebrew first, then `go install`, and falls back to printing the manual instructions if neither is available. You can re-run the check at any time with `ccdirenv ghq install`.
+### ghq users
 
-To skip the auto-install (useful in CI), set `CCDIRENV_SKIP_GHQ_AUTOINSTALL=1`.
+If you pick ghq mode (or both) at install time, `ccdirenv init` will install [ghq](https://github.com/x-motemen/ghq) automatically when it's missing from `PATH` — Homebrew first, then `go install`, falling back to printing manual instructions. You can re-run the check at any time with `ccdirenv ghq install`. Skip the auto-install (e.g. in CI) with `CCDIRENV_SKIP_GHQ_AUTOINSTALL=1`.
+
+### git users
+
+git mode requires nothing beyond `git` itself. Worktrees (`.git` as a file) and submodules are supported.
 
 ## Setup
 
 ```sh
-# 1. Create the profile directory layout and install the shim at ~/.ccdirenv/bin/claude.
+# 1. Create the profile directory layout, install the shim, pick a discovery mode.
+#    `ccdirenv init` is interactive; pass --mode=git|ghq|both|off to skip the prompt.
 ccdirenv init
 
 # 2. Add this line to your shell rc (~/.zshrc, ~/.bashrc, etc.) — ccdirenv init prints the exact instruction:
@@ -64,39 +74,85 @@ ccdirenv import default
 ccdirenv login work
 ccdirenv login personal
 
-# 5. Map ghq owners to profiles.
-ccdirenv ghq map github.com/your-personal-handle  default
-ccdirenv ghq map github.com/your-employer         work
-ccdirenv ghq map github.com/a-client-org          client-acme
+# 5. Map GitHub owners to profiles (used by both ghq and git modes).
+ccdirenv owners map github.com/your-personal-handle  default
+ccdirenv owners map github.com/your-employer         work
+ccdirenv owners map github.com/a-client-org          client-acme
 ```
 
 That's it. Every repository under those owners now uses the right Claude Code account the moment you `cd` into it.
 
-## ghq integration (the primary workflow)
+The `init` prompt:
+
+```
+How do you organize Git repositories?
+  1) ghq   — uses ~/ghq/<host>/<owner>/<repo> layout (ghq priority + git fallback)
+  2) git   — any repository with a git remote (default)
+  3) both  — both methods enabled (git priority, ghq fallback)
+  4) off   — no repo-aware detection
+Choose [1-4, default 2]:
+```
+
+Switch later with `ccdirenv mode set <ghq|git|both|off>`.
+
+## Configuration
 
 ```toml
 # ~/.ccdirenv/config.toml
 default_profile = "default"
+discovery_priority = "git"          # "git" | "ghq" — which method runs first when both are enabled
 
-[ghq.owners]
+[ghq]
+enabled = false                     # path-based detection (~/ghq layout)
+# root = "~/ghq"                    # optional override, otherwise auto-detected
+
+[git]
+enabled = true                      # remote-based detection (.git/config)
+remote = "origin"                   # remote to inspect
+
+# Shared owner → profile map (used by both modes)
+[owners]
 "github.com/SuguruOoki" = "default"
 "github.com/TheMoshInc" = "mosh"
 "github.com/AcmeCorp"   = "work"
+
+# Optional explicit per-directory overrides (highest priority before discovery)
+[directories]
+"~/sandbox/**" = "default"
 ```
 
-The ghq root is auto-detected: `$GHQ_ROOT` if set, otherwise `~/ghq` (the ghq default). Override it with `[ghq] root = "/custom/path"` if you keep ghq elsewhere.
-
-CLI:
+CLI surface:
 
 ```sh
-ccdirenv ghq list                                # show current mappings + ghq root
-ccdirenv ghq map github.com/Acme work            # add or update a mapping
-ccdirenv ghq unmap github.com/Acme               # remove a mapping
-ccdirenv ghq root /custom/ghq                    # override ghq root
-ccdirenv ghq root ""                             # clear the override (back to $GHQ_ROOT / ~/ghq)
+ccdirenv mode show                               # current discovery mode
+ccdirenv mode set ghq|git|both|off               # switch modes
+
+ccdirenv owners list                             # list owner → profile mappings
+ccdirenv owners map github.com/Acme work         # add or update
+ccdirenv owners unmap github.com/Acme            # remove
+
+ccdirenv git show                                # git detection state
+ccdirenv git enable / disable
+ccdirenv git remote upstream                     # change which remote to inspect
+
+ccdirenv ghq list                                # ghq state + owner mappings
+ccdirenv ghq enable / disable
+ccdirenv ghq root /custom/path                   # override ghq root (or "" to clear)
+ccdirenv ghq install                             # install ghq if missing
 ```
 
-Subdirectories of a matched repo also resolve to the same profile, so `cd ~/ghq/github.com/Acme/widget/src/lib` still picks `work`.
+For backward compatibility, `ccdirenv ghq map / unmap` still work as aliases of `ccdirenv owners map / unmap`. Old `[ghq.owners]` blocks in config.toml are migrated into `[owners]` automatically the next time the config is read.
+
+### How git detection works
+
+ccdirenv walks up from the current directory looking for `.git`, parses `.git/config` directly (no `git` subprocess), reads the configured remote URL, and extracts `<host>/<owner>`. Supported URL forms include:
+
+- `git@github.com:Acme/widget.git`
+- `https://github.com/Acme/widget.git`
+- `ssh://git@github.com/Acme/widget.git`
+- self-hosted hosts (any `<host>/<owner>` works as long as you have a matching `[owners]` entry)
+
+When `.git` is a file rather than a directory (linked **worktrees** and **submodules**), ccdirenv follows `gitdir:` and `commondir` to reach the actual config — no special configuration needed.
 
 ### Per-repo overrides
 
@@ -104,14 +160,14 @@ Sometimes one repo under a mapped owner needs a different profile (a fork, a san
 
 ```sh
 # Option A: pin a single repo via marker file (highest priority).
-cd ~/ghq/github.com/Acme/sandbox && ccdirenv use personal
+cd ~/some/repo && ccdirenv use personal
 
-# Option B: write an explicit glob in config.toml that beats the ghq mapping.
+# Option B: write an explicit glob in config.toml that beats discovery.
 ```
 
 ```toml
 [directories]
-"~/ghq/github.com/Acme/sandbox/**" = "personal"
+"~/projects/sandbox/**" = "personal"
 ```
 
 ## Other useful commands
@@ -148,7 +204,7 @@ Run `ccdirenv doctor`. It reports:
 
 If the shim is installed but `claude` keeps picking up the wrong account, make sure `~/.ccdirenv/bin` comes *before* `~/.local/bin` (or wherever Claude Code installed itself) in your `PATH`.
 
-If a ghq-rooted directory unexpectedly resolves to `default`, run `ccdirenv ghq list` and confirm the owner mapping is registered, and that your ghq root matches what ccdirenv detects.
+If a directory unexpectedly resolves to `default`, run `ccdirenv mode show` to confirm the active mode, then `ccdirenv owners list` to confirm the owner is mapped. For ghq mode, also check that your ghq root matches what `ccdirenv ghq list` reports. For git mode, ensure the repo has the configured remote (`ccdirenv git show`).
 
 ## Uninstall
 
