@@ -1,11 +1,11 @@
 //! Profile resolution from a starting directory.
 
-use crate::config::Config;
+use crate::config::{Config, DiscoveryPriority};
 use crate::paths::MARKER_FILENAME;
 use anyhow::Result;
 use globset::Glob;
 use std::fs;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 const MAX_MARKER_BYTES: u64 = 64 * 1024;
 
@@ -54,51 +54,33 @@ pub fn find_config_profile(cwd: &Path, config: &Config) -> Option<String> {
     None
 }
 
-/// Resolve via the `[ghq.owners]` mapping.
-///
-/// If `cwd` lives under the ghq root and matches `<root>/<host>/<owner>/<repo>...`,
-/// look up `<host>/<owner>` in `config.ghq.owners`.
-pub fn find_ghq_profile(cwd: &Path, config: &Config) -> Option<String> {
-    if config.ghq.owners.is_empty() {
-        return None;
-    }
-    let root = ghq_root(config)?;
-    let canonical = fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-    let canonical_root = fs::canonicalize(&root).unwrap_or(root);
-    let rel = canonical.strip_prefix(&canonical_root).ok()?;
-    let parts: Vec<&str> = rel
-        .components()
-        .filter_map(|c| match c {
-            Component::Normal(s) => s.to_str(),
-            _ => None,
-        })
-        .collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let key = format!("{}/{}", parts[0], parts[1]);
-    config.ghq.owners.get(&key).cloned()
+/// Look up an `<host>/<owner>` key in the shared owners map.
+fn lookup_owner(owner: &str, config: &Config) -> Option<String> {
+    config.owners.get(owner).cloned()
 }
 
-/// Resolve the ghq root directory.
-///
-/// Priority:
-/// 1. `[ghq] root = "..."` in config.toml
-/// 2. `$GHQ_ROOT` environment variable
-/// 3. `~/ghq` (the default ghq layout)
-pub fn ghq_root(config: &Config) -> Option<PathBuf> {
-    if let Some(r) = config.ghq.root.as_ref() {
-        if let Ok(expanded) = shellexpand::full(r) {
-            return Some(PathBuf::from(expanded.into_owned()));
+/// Run discovery in priority order. The first method that finds an owner
+/// AND has it mapped wins.
+pub fn find_discovery_profile(cwd: &Path, config: &Config) -> Option<String> {
+    let try_ghq = || -> Option<String> {
+        if !config.ghq.enabled {
+            return None;
         }
-    }
-    if let Ok(r) = std::env::var("GHQ_ROOT") {
-        if !r.is_empty() {
-            return Some(PathBuf::from(r));
+        let owner = super::ghq::detect_owner(cwd, config)?;
+        lookup_owner(&owner, config)
+    };
+    let try_git = || -> Option<String> {
+        if !config.git.enabled {
+            return None;
         }
+        let owner = super::git::detect_owner(cwd, config)?;
+        lookup_owner(&owner, config)
+    };
+
+    match config.discovery_priority {
+        DiscoveryPriority::Ghq => try_ghq().or_else(try_git),
+        DiscoveryPriority::Git => try_git().or_else(try_ghq),
     }
-    let home = dirs::home_dir()?;
-    Some(home.join("ghq"))
 }
 
 pub fn resolve(cwd: &Path, config: &Config) -> String {
@@ -111,7 +93,7 @@ pub fn resolve(cwd: &Path, config: &Config) -> String {
     if let Some(name) = find_config_profile(cwd, config) {
         return name;
     }
-    if let Some(name) = find_ghq_profile(cwd, config) {
+    if let Some(name) = find_discovery_profile(cwd, config) {
         return name;
     }
     config.default_profile.clone()
@@ -120,7 +102,16 @@ pub fn resolve(cwd: &Path, config: &Config) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
+
+    fn write(path: impl AsRef<Path>, body: &str) {
+        let p = path.as_ref();
+        if let Some(parent) = p.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(p, body).unwrap();
+    }
 
     #[test]
     fn no_marker_returns_none() {
@@ -165,7 +156,7 @@ mod tests {
     }
 
     #[test]
-    fn first_match_wins() {
+    fn first_glob_match_wins() {
         let tmp = TempDir::new().unwrap();
         let root = fs::canonicalize(tmp.path()).unwrap();
         let dir = root.join("a").join("b");
@@ -179,14 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn no_match_returns_none() {
-        let tmp = TempDir::new().unwrap();
-        let cfg = Config::default();
-        assert_eq!(find_config_profile(tmp.path(), &cfg), None);
-    }
-
-    #[test]
-    #[serial_test::serial]
+    #[serial]
     fn forced_env_wins() {
         std::env::set_var("CCDIRENV_PROFILE", "forced");
         let tmp = TempDir::new().unwrap();
@@ -197,20 +181,8 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn default_when_nothing() {
-        std::env::remove_var("CCDIRENV_PROFILE");
-        let tmp = TempDir::new().unwrap();
-        let cfg = Config {
-            default_profile: "myDefault".into(),
-            ..Config::default()
-        };
-        assert_eq!(resolve(tmp.path(), &cfg), "myDefault");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn marker_beats_config() {
+    #[serial]
+    fn marker_beats_directories() {
         std::env::remove_var("CCDIRENV_PROFILE");
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join(".ccdirenv"), "marker-wins\n").unwrap();
@@ -221,63 +193,8 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn ghq_owner_resolves() {
-        std::env::remove_var("CCDIRENV_PROFILE");
-        std::env::remove_var("GHQ_ROOT");
-        let tmp = TempDir::new().unwrap();
-        let root = fs::canonicalize(tmp.path()).unwrap();
-        let repo = root.join("github.com/Acme/widget");
-        fs::create_dir_all(&repo).unwrap();
-        let mut cfg = Config::default();
-        cfg.ghq.root = Some(root.display().to_string());
-        cfg.ghq
-            .owners
-            .insert("github.com/Acme".into(), "work".into());
-        assert_eq!(find_ghq_profile(&repo, &cfg), Some("work".into()));
-        // Subdirectories of the repo also resolve.
-        let sub = repo.join("src/lib");
-        fs::create_dir_all(&sub).unwrap();
-        assert_eq!(find_ghq_profile(&sub, &cfg), Some("work".into()));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn ghq_unknown_owner_returns_none() {
-        std::env::remove_var("CCDIRENV_PROFILE");
-        std::env::remove_var("GHQ_ROOT");
-        let tmp = TempDir::new().unwrap();
-        let root = fs::canonicalize(tmp.path()).unwrap();
-        let repo = root.join("github.com/Stranger/repo");
-        fs::create_dir_all(&repo).unwrap();
-        let mut cfg = Config::default();
-        cfg.ghq.root = Some(root.display().to_string());
-        cfg.ghq
-            .owners
-            .insert("github.com/Acme".into(), "work".into());
-        assert_eq!(find_ghq_profile(&repo, &cfg), None);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn ghq_outside_root_returns_none() {
-        std::env::remove_var("CCDIRENV_PROFILE");
-        std::env::remove_var("GHQ_ROOT");
-        let tmp = TempDir::new().unwrap();
-        let root = fs::canonicalize(tmp.path()).unwrap();
-        let outside = TempDir::new().unwrap();
-        let outside_canonical = fs::canonicalize(outside.path()).unwrap();
-        let mut cfg = Config::default();
-        cfg.ghq.root = Some(root.display().to_string());
-        cfg.ghq
-            .owners
-            .insert("github.com/Acme".into(), "work".into());
-        assert_eq!(find_ghq_profile(&outside_canonical, &cfg), None);
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn directories_beat_ghq_owner() {
+    #[serial]
+    fn directories_beat_discovery() {
         std::env::remove_var("CCDIRENV_PROFILE");
         std::env::remove_var("GHQ_ROOT");
         let tmp = TempDir::new().unwrap();
@@ -285,11 +202,10 @@ mod tests {
         let sub = root.join("github.com/Acme/widget/src");
         fs::create_dir_all(&sub).unwrap();
         let mut cfg = Config::default();
+        cfg.ghq.enabled = true;
         cfg.ghq.root = Some(root.display().to_string());
-        cfg.ghq
-            .owners
+        cfg.owners
             .insert("github.com/Acme".into(), "ghq-mapped".into());
-        // Glob over the repo subtree should beat ghq owner mapping.
         cfg.directories.insert(
             format!("{}/github.com/Acme/widget/**", root.display()),
             "explicit".into(),
@@ -298,32 +214,93 @@ mod tests {
     }
 
     #[test]
-    #[serial_test::serial]
-    fn ghq_root_uses_env_var_when_unset() {
-        std::env::remove_var("GHQ_ROOT");
-        let tmp = TempDir::new().unwrap();
-        let canonical = fs::canonicalize(tmp.path()).unwrap();
-        std::env::set_var("GHQ_ROOT", canonical.display().to_string());
-        let cfg = Config::default();
-        assert_eq!(ghq_root(&cfg), Some(canonical));
-        std::env::remove_var("GHQ_ROOT");
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn ghq_resolves_via_resolve_function() {
+    #[serial]
+    fn ghq_priority_runs_ghq_first() {
         std::env::remove_var("CCDIRENV_PROFILE");
         std::env::remove_var("GHQ_ROOT");
         let tmp = TempDir::new().unwrap();
-        let root = fs::canonicalize(tmp.path()).unwrap();
-        let repo = root.join("github.com/Acme/widget");
+        let ghq_root = fs::canonicalize(tmp.path()).unwrap();
+        let repo = ghq_root.join("github.com/AcmeGhq/widget");
+        let git_dir = repo.join(".git");
+        write(
+            git_dir.join("config"),
+            "[remote \"origin\"]\n    url = git@github.com:AcmeGit/widget.git\n",
+        );
+        let mut cfg = Config::default();
+        cfg.discovery_priority = DiscoveryPriority::Ghq;
+        cfg.ghq.enabled = true;
+        cfg.ghq.root = Some(ghq_root.display().to_string());
+        cfg.git.enabled = true;
+        cfg.owners
+            .insert("github.com/AcmeGhq".into(), "by-ghq".into());
+        cfg.owners
+            .insert("github.com/AcmeGit".into(), "by-git".into());
+        assert_eq!(resolve(&repo, &cfg), "by-ghq");
+    }
+
+    #[test]
+    #[serial]
+    fn git_priority_runs_git_first() {
+        std::env::remove_var("CCDIRENV_PROFILE");
+        std::env::remove_var("GHQ_ROOT");
+        let tmp = TempDir::new().unwrap();
+        let ghq_root = fs::canonicalize(tmp.path()).unwrap();
+        let repo = ghq_root.join("github.com/AcmeGhq/widget");
+        let git_dir = repo.join(".git");
+        write(
+            git_dir.join("config"),
+            "[remote \"origin\"]\n    url = git@github.com:AcmeGit/widget.git\n",
+        );
+        let mut cfg = Config::default();
+        cfg.discovery_priority = DiscoveryPriority::Git;
+        cfg.ghq.enabled = true;
+        cfg.ghq.root = Some(ghq_root.display().to_string());
+        cfg.git.enabled = true;
+        cfg.owners
+            .insert("github.com/AcmeGhq".into(), "by-ghq".into());
+        cfg.owners
+            .insert("github.com/AcmeGit".into(), "by-git".into());
+        assert_eq!(resolve(&repo, &cfg), "by-git");
+    }
+
+    #[test]
+    #[serial]
+    fn falls_back_to_other_method_when_first_misses() {
+        std::env::remove_var("CCDIRENV_PROFILE");
+        std::env::remove_var("GHQ_ROOT");
+        // Path is under ghq root, but no .git → git detection misses.
+        // git priority means git tried first, then ghq.
+        let tmp = TempDir::new().unwrap();
+        let ghq_root = fs::canonicalize(tmp.path()).unwrap();
+        let repo = ghq_root.join("github.com/Acme/widget");
+        fs::create_dir_all(&repo).unwrap();
+        let mut cfg = Config::default();
+        cfg.discovery_priority = DiscoveryPriority::Git;
+        cfg.ghq.enabled = true;
+        cfg.ghq.root = Some(ghq_root.display().to_string());
+        cfg.git.enabled = true;
+        cfg.owners
+            .insert("github.com/Acme".into(), "ghq-fallback".into());
+        assert_eq!(resolve(&repo, &cfg), "ghq-fallback");
+    }
+
+    #[test]
+    #[serial]
+    fn discovery_disabled_falls_through_to_default() {
+        std::env::remove_var("CCDIRENV_PROFILE");
+        std::env::remove_var("GHQ_ROOT");
+        let tmp = TempDir::new().unwrap();
+        let ghq_root = fs::canonicalize(tmp.path()).unwrap();
+        let repo = ghq_root.join("github.com/Acme/widget");
         fs::create_dir_all(&repo).unwrap();
         let mut cfg = Config::default();
         cfg.default_profile = "fallback".into();
-        cfg.ghq.root = Some(root.display().to_string());
-        cfg.ghq
-            .owners
-            .insert("github.com/Acme".into(), "work".into());
-        assert_eq!(resolve(&repo, &cfg), "work");
+        cfg.discovery_priority = DiscoveryPriority::Git;
+        cfg.ghq.enabled = false;
+        cfg.git.enabled = false;
+        cfg.ghq.root = Some(ghq_root.display().to_string());
+        cfg.owners
+            .insert("github.com/Acme".into(), "would-have-matched".into());
+        assert_eq!(resolve(&repo, &cfg), "fallback");
     }
 }
