@@ -37,16 +37,21 @@ Claude Code's own installation and auto-update path are never touched — the sh
 ## Install
 
 ```sh
-# crates.io (recommended)
+# crates.io
 cargo install ccdirenv
 
-# Or grab a prebuilt binary from a GitHub Release (macOS / Linux):
-curl --proto '=https' --tlsv1.2 -LsSf \
-  https://github.com/SuguruOoki/ccdirenv/releases/latest/download/ccdirenv-installer.sh | sh
-
-# Homebrew (after the tap is published)
+# Homebrew (macOS / Linuxbrew)
 brew tap SuguruOoki/tap
 brew install ccdirenv
+
+# Nix (flakes)
+nix profile install github:SuguruOoki/ccdirenv
+# or, run without installing
+nix run github:SuguruOoki/ccdirenv -- which
+
+# Prebuilt binary via shell installer
+curl --proto '=https' --tlsv1.2 -LsSf \
+  https://github.com/SuguruOoki/ccdirenv/releases/latest/download/ccdirenv-installer.sh | sh
 ```
 
 ### ghq users
