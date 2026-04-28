@@ -251,7 +251,7 @@ macOS Keychain per-profile: use service names `Claude Code-credentials-<profile>
 
 1. **crates.io**: `cargo install ccdirenv`. Source of truth.
 2. **GitHub Releases**: prebuilt tarballs per target triple. SHA256 + minisign signature.
-3. **Homebrew tap**: `brew tap SuguruOoki/tap && brew install ccdirenv`. Tap repo auto-bumped from release workflow.
+3. **Homebrew tap**: `brew tap SuguruOoki/ccdirenv && brew install ccdirenv`. Tap repo auto-bumped from release workflow.
 4. **Shell one-liner**: `curl -fsSL https://.../install.sh | sh` (optional, later).
 
 ## 12. Testing strategy

@@ -41,7 +41,7 @@ Claude Code's own installation and auto-update path are never touched — the sh
 cargo install ccdirenv
 
 # Homebrew (macOS / Linuxbrew)
-brew tap SuguruOoki/tap
+brew tap SuguruOoki/ccdirenv
 brew install ccdirenv
 
 # Nix (flakes)
