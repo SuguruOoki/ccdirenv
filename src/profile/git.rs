@@ -141,7 +141,10 @@ pub fn parse_owner(url: &str) -> Option<String> {
     // scp-like: user@host:path
     if !url.contains("://") {
         if let Some((host_part, path)) = url.split_once(':') {
-            let host = host_part.rsplit_once('@').map(|(_, h)| h).unwrap_or(host_part);
+            let host = host_part
+                .rsplit_once('@')
+                .map(|(_, h)| h)
+                .unwrap_or(host_part);
             let owner = first_segment(path)?;
             if !host.is_empty() && !owner.is_empty() {
                 return Some(format!("{host}/{owner}"));
@@ -152,11 +155,11 @@ pub fn parse_owner(url: &str) -> Option<String> {
 
     // scheme://[user@]host[:port]/owner/repo[.git]
     let (_scheme, rest) = url.split_once("://")?;
-    let (authority, path) = match rest.split_once('/') {
-        Some(parts) => parts,
-        None => return None,
-    };
-    let host_with_port = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    let (authority, path) = rest.split_once('/')?;
+    let host_with_port = authority
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or(authority);
     let host = host_with_port
         .split_once(':')
         .map(|(h, _)| h)

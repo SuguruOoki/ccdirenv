@@ -5,17 +5,12 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DiscoveryPriority {
+    #[default]
     Git,
     Ghq,
-}
-
-impl Default for DiscoveryPriority {
-    fn default() -> Self {
-        DiscoveryPriority::Git
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -177,8 +172,14 @@ default_profile = "default"
         let path = tmp.path().join("c.toml");
         std::fs::write(&path, src).unwrap();
         let cfg = Config::load(&path).unwrap();
-        assert_eq!(cfg.owners.get("github.com/Acme").map(String::as_str), Some("work"));
-        assert_eq!(cfg.owners.get("github.com/me").map(String::as_str), Some("personal"));
+        assert_eq!(
+            cfg.owners.get("github.com/Acme").map(String::as_str),
+            Some("work")
+        );
+        assert_eq!(
+            cfg.owners.get("github.com/me").map(String::as_str),
+            Some("personal")
+        );
         // Legacy ghq.owners now empty after merge.
         assert!(cfg.ghq.owners.is_empty());
         // v0.2 implied ghq detection on — preserve that for legacy users.
@@ -198,7 +199,10 @@ default_profile = "default"
         let path = tmp.path().join("c.toml");
         std::fs::write(&path, src).unwrap();
         let cfg = Config::load(&path).unwrap();
-        assert_eq!(cfg.owners.get("github.com/Acme").map(String::as_str), Some("winner"));
+        assert_eq!(
+            cfg.owners.get("github.com/Acme").map(String::as_str),
+            Some("winner")
+        );
     }
 
     #[test]
@@ -231,7 +235,10 @@ remote = "upstream"
         assert_eq!(cfg.ghq.root.as_deref(), Some("~/repos"));
         assert!(!cfg.git.enabled);
         assert_eq!(cfg.git.remote, "upstream");
-        assert_eq!(cfg.owners.get("github.com/Acme").map(String::as_str), Some("work"));
+        assert_eq!(
+            cfg.owners.get("github.com/Acme").map(String::as_str),
+            Some("work")
+        );
     }
 
     #[test]
@@ -256,8 +263,7 @@ remote = "upstream"
             ..Config::default()
         };
         cfg.directories.insert("~/work/**".into(), "work".into());
-        cfg.owners
-            .insert("github.com/Acme".into(), "work".into());
+        cfg.owners.insert("github.com/Acme".into(), "work".into());
         cfg.ghq.enabled = true;
         cfg.discovery_priority = DiscoveryPriority::Ghq;
         cfg.save(&path).unwrap();

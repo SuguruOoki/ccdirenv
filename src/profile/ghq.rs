@@ -65,7 +65,10 @@ mod tests {
         fs::create_dir_all(&repo).unwrap();
         let mut cfg = Config::default();
         cfg.ghq.root = Some(root.display().to_string());
-        assert_eq!(detect_owner(&repo, &cfg).as_deref(), Some("github.com/Acme"));
+        assert_eq!(
+            detect_owner(&repo, &cfg).as_deref(),
+            Some("github.com/Acme")
+        );
         // Subdir works too.
         let sub = repo.join("src/lib");
         fs::create_dir_all(&sub).unwrap();
