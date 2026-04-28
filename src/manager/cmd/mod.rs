@@ -1,5 +1,7 @@
 pub mod config_cmd;
 pub mod doctor;
+pub mod ensure_ghq;
+pub mod ghq;
 pub mod import;
 pub mod init;
 pub mod list;

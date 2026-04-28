@@ -11,6 +11,24 @@ pub struct Config {
     pub default_profile: String,
     #[serde(default)]
     pub directories: indexmap::IndexMap<String, String>,
+    #[serde(default, skip_serializing_if = "GhqConfig::is_empty")]
+    pub ghq: GhqConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct GhqConfig {
+    /// Optional override for ghq root. Defaults to $GHQ_ROOT, then `~/ghq`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root: Option<String>,
+    /// Map of "host/owner" → profile name (e.g. "github.com/SuguruOoki" → "default").
+    #[serde(default, skip_serializing_if = "indexmap::IndexMap::is_empty")]
+    pub owners: indexmap::IndexMap<String, String>,
+}
+
+impl GhqConfig {
+    pub fn is_empty(&self) -> bool {
+        self.root.is_none() && self.owners.is_empty()
+    }
 }
 
 fn default_profile_name() -> String {
@@ -22,6 +40,7 @@ impl Default for Config {
         Self {
             default_profile: default_profile_name(),
             directories: indexmap::IndexMap::new(),
+            ghq: GhqConfig::default(),
         }
     }
 }
@@ -56,6 +75,7 @@ mod tests {
         let cfg = Config::load(&tmp.path().join("nope.toml")).unwrap();
         assert_eq!(cfg.default_profile, "default");
         assert!(cfg.directories.is_empty());
+        assert!(cfg.ghq.is_empty());
     }
 
     #[test]
@@ -69,6 +89,45 @@ default_profile = "personal"
         let cfg: Config = toml::from_str(src).unwrap();
         assert_eq!(cfg.default_profile, "personal");
         assert_eq!(cfg.directories.get("~/work/**"), Some(&"work".to_string()));
+        assert!(cfg.ghq.is_empty());
+    }
+
+    #[test]
+    fn parse_ghq_section() {
+        let src = r#"
+default_profile = "default"
+
+[ghq]
+root = "~/ghq"
+
+[ghq.owners]
+"github.com/SuguruOoki" = "default"
+"github.com/TheMoshInc" = "mosh"
+"#;
+        let cfg: Config = toml::from_str(src).unwrap();
+        assert_eq!(cfg.ghq.root.as_deref(), Some("~/ghq"));
+        assert_eq!(
+            cfg.ghq.owners.get("github.com/SuguruOoki"),
+            Some(&"default".to_string())
+        );
+        assert_eq!(
+            cfg.ghq.owners.get("github.com/TheMoshInc"),
+            Some(&"mosh".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_ghq_owners_only() {
+        let src = r#"
+[ghq.owners]
+"github.com/Acme" = "work"
+"#;
+        let cfg: Config = toml::from_str(src).unwrap();
+        assert!(cfg.ghq.root.is_none());
+        assert_eq!(
+            cfg.ghq.owners.get("github.com/Acme"),
+            Some(&"work".to_string())
+        );
     }
 
     #[test]
@@ -93,9 +152,16 @@ default_profile = "personal"
             ..Config::default()
         };
         cfg.directories.insert("~/work/**".into(), "work".into());
+        cfg.ghq
+            .owners
+            .insert("github.com/Acme".into(), "work".into());
         cfg.save(&path).unwrap();
         let reloaded = Config::load(&path).unwrap();
         assert_eq!(reloaded.default_profile, "personal");
         assert_eq!(reloaded.directories.get("~/work/**"), Some(&"work".into()));
+        assert_eq!(
+            reloaded.ghq.owners.get("github.com/Acme"),
+            Some(&"work".into())
+        );
     }
 }

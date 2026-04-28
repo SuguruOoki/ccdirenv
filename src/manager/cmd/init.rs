@@ -1,3 +1,4 @@
+use crate::manager::cmd::ensure_ghq::{ensure, EnsureMode};
 use crate::paths;
 use anyhow::{Context, Result};
 use std::fs;
@@ -27,7 +28,16 @@ pub fn run() -> Result<()> {
 
     println!("ccdirenv initialized at {}", root.display());
     println!();
+
+    // ccdirenv is built around the ghq layout — make sure ghq is present.
+    let _ = ensure(EnsureMode::Interactive);
+
+    println!();
     println!("Add to your shell rc:");
     println!("    export PATH=\"{}:$PATH\"", bin.display());
+    println!();
+    println!("Then map ghq owners to profiles, e.g.:");
+    println!("    ccdirenv ghq map github.com/<your-handle> default");
+    println!("    ccdirenv ghq map github.com/<work-org>    work");
     Ok(())
 }

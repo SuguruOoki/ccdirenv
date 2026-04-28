@@ -10,6 +10,7 @@ fn init_creates_layout() {
         .unwrap()
         .arg("init")
         .env("CCDIRENV_HOME", &home)
+        .env("CCDIRENV_SKIP_GHQ_AUTOINSTALL", "1")
         .output()
         .unwrap();
     assert!(output.status.success());
