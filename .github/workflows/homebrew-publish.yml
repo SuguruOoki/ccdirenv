@@ -1,0 +1,60 @@
+name: Publish Homebrew Formula
+
+# Push the cargo-dist-generated Homebrew formula (ccdirenv.rb) to the tap
+# repo (SuguruOoki/homebrew-tap) whenever a non-prerelease GitHub Release
+# is published.
+#
+# Requires the HOMEBREW_TAP_TOKEN secret in this repo: a fine-grained PAT
+# with Contents: read & write on SuguruOoki/homebrew-tap. Without it, the
+# job exits early as a no-op.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-22.04
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      REPO: ${{ github.repository }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Bail out if HOMEBREW_TAP_TOKEN is missing
+        run: |
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN is not set; skipping tap publish."
+            exit 0
+          fi
+
+      - name: Download formula from release
+        run: |
+          if [ -z "${TAP_TOKEN:-}" ]; then exit 0; fi
+          gh release download "$TAG" \
+            --repo "$REPO" \
+            --pattern "ccdirenv.rb" \
+            --output ccdirenv.rb
+          test -s ccdirenv.rb
+
+      - name: Push to SuguruOoki/homebrew-tap
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then exit 0; fi
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/SuguruOoki/homebrew-tap.git" tap
+          mkdir -p tap/Formula
+          cp ccdirenv.rb tap/Formula/ccdirenv.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/ccdirenv.rb
+          if git diff --cached --quiet; then
+            echo "Formula unchanged — nothing to commit."
+            exit 0
+          fi
+          git commit -m "ccdirenv ${TAG}: bump formula"
+          git push origin HEAD:main
