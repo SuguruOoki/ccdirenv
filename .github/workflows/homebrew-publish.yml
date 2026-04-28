@@ -1,26 +1,36 @@
 name: Publish Homebrew Formula
 
-# Push the cargo-dist-generated Homebrew formula (ccdirenv.rb) to the tap
-# repo (SuguruOoki/homebrew-tap) whenever a non-prerelease GitHub Release
-# is published.
+# Pushes the cargo-dist-generated Homebrew formula (ccdirenv.rb) to the
+# tap repo (SuguruOoki/homebrew-tap) on every release tag.
+#
+# Triggered by tag push (rather than `release: published`) because the
+# release is created by cargo-dist using the workflow's GITHUB_TOKEN —
+# release events from GITHUB_TOKEN do not start other workflows. The job
+# polls until the GitHub Release exists, then publishes.
 #
 # Requires the HOMEBREW_TAP_TOKEN secret in this repo: a fine-grained PAT
-# with Contents: read & write on SuguruOoki/homebrew-tap. Without it, the
+# with Contents: Read & Write on SuguruOoki/homebrew-tap. Without it, the
 # job exits early as a no-op.
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - '**[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing release tag to publish (e.g. v0.3.1)'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   publish:
-    if: ${{ !github.event.release.prerelease }}
     runs-on: ubuntu-22.04
     env:
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
       REPO: ${{ github.repository }}
       TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -31,6 +41,20 @@ jobs:
             echo "::warning::HOMEBREW_TAP_TOKEN is not set; skipping tap publish."
             exit 0
           fi
+
+      - name: Wait for the GitHub Release to be published
+        run: |
+          if [ -z "${TAP_TOKEN:-}" ]; then exit 0; fi
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --repo "$REPO" --json isDraft,isPrerelease --jq '.isDraft' 2>/dev/null | grep -qx "false"; then
+              echo "Release $TAG is published."
+              exit 0
+            fi
+            echo "Waiting for release $TAG to be published... ($i/30)"
+            sleep 30
+          done
+          echo "::error::Release $TAG was not published within 15 minutes."
+          exit 1
 
       - name: Download formula from release
         run: |
