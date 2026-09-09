@@ -9,8 +9,11 @@ fn main() -> ExitCode {
         .and_then(|s| s.to_str().map(str::to_owned))
         .unwrap_or_default();
 
-    if invoked_as == "claude" {
-        let Err(e) = ccdirenv::shim::run(raw_args);
+    if let Some(tool) = ccdirenv::tool::Tool::ALL
+        .into_iter()
+        .find(|tool| tool.binary() == invoked_as)
+    {
+        let Err(e) = ccdirenv::shim::run(tool, raw_args);
         eprintln!("ccdirenv shim: {e}");
         return ExitCode::from(127);
     }

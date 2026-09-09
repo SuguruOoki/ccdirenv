@@ -1,5 +1,5 @@
 {
-  description = "ccdirenv — direnv-style automatic Claude Code account switching";
+  description = "ccdirenv — direnv-style automatic Claude Code and Codex CLI account switching";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -34,7 +34,7 @@
             doCheck = true;
 
             meta = with pkgs.lib; {
-              description = "direnv-style automatic Claude Code account switching";
+              description = "direnv-style automatic Claude Code and Codex CLI account switching";
               homepage = "https://github.com/SuguruOoki/ccdirenv";
               license = with licenses; [ mit asl20 ];
               maintainers = [ ];

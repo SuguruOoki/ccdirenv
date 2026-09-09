@@ -1,10 +1,13 @@
+use crate::tool::Tool;
 use clap::{Parser, Subcommand};
+use std::ffi::OsString;
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(
     name = "ccdirenv",
     version,
-    about = "direnv-style Claude Code account switching"
+    about = "direnv-style Claude Code and Codex CLI account switching"
 )]
 pub struct Args {
     #[command(subcommand)]
@@ -18,26 +21,49 @@ pub enum Cmd {
         /// Preselect discovery mode. Skips the interactive prompt.
         #[arg(long, value_name = "MODE")]
         mode: Option<String>,
-        /// Skip the interactive prompt; use the default mode (git).
+        /// Skip the prompt; preserve existing discovery settings or default to git.
         #[arg(long)]
         no_prompt: bool,
     },
-    /// Create a profile and run `claude /login` inside it.
-    Login { profile: Option<String> },
-    /// List all profiles with their active account email.
-    List,
+    /// Create a profile and launch the selected tool's login command.
+    Login {
+        profile: Option<String>,
+        #[arg(long, value_enum, default_value = "claude")]
+        tool: Tool,
+        /// Arguments to pass to the login command after `--`.
+        #[arg(last = true)]
+        args: Vec<OsString>,
+    },
+    /// List profiles with Claude account email or Codex login status.
+    List {
+        #[arg(long, value_enum, default_value = "claude")]
+        tool: Tool,
+    },
     /// Print which profile resolves for the current directory.
-    Which,
+    Which {
+        #[arg(long, value_enum, default_value = "claude")]
+        tool: Tool,
+    },
     /// Bind the current directory to a profile via a .ccdirenv marker.
     Use { profile: String },
     /// Remove the .ccdirenv marker in the current directory.
     Unuse,
     /// Open ~/.ccdirenv/config.toml in $EDITOR.
     Config,
-    /// Diagnostics (PATH order, real claude resolvability, permissions).
-    Doctor,
-    /// Copy existing ~/.claude/ into the given profile name.
-    Import { profile: String },
+    /// Diagnostics for the selected tool (shim, PATH order, real binary).
+    Doctor {
+        #[arg(long, value_enum, default_value = "claude")]
+        tool: Tool,
+    },
+    /// Copy existing tool configuration into the given profile name.
+    Import {
+        profile: String,
+        #[arg(long, value_enum, default_value = "claude")]
+        tool: Tool,
+        /// Source directory (defaults to ~/.claude or ~/.codex).
+        #[arg(long)]
+        from: Option<PathBuf>,
+    },
     /// Manage the shared owner → profile map (used by ghq and git).
     #[command(subcommand)]
     Owners(OwnersCmd),

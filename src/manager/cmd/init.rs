@@ -1,7 +1,7 @@
 use crate::config::Config;
 use crate::manager::cmd::ensure_ghq::{ensure, EnsureMode};
 use crate::manager::cmd::mode::Mode;
-use crate::paths;
+use crate::{paths, tool::Tool};
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::{self, BufRead, IsTerminal, Write};
@@ -18,32 +18,43 @@ pub struct InitOptions {
 pub fn run(opts: InitOptions) -> Result<()> {
     let root = paths::root()?;
     let bin = paths::bin_dir()?;
-    let default_profile = paths::profile_dir("default")?;
 
     fs::create_dir_all(&bin).context("creating bin dir")?;
-    fs::create_dir_all(&default_profile).context("creating default profile dir")?;
+    Tool::Claude
+        .ensure_config_dir("default")
+        .context("creating default profile dir")?;
 
     let cfg_path = paths::config_file()?;
-    let mut cfg = if cfg_path.exists() {
+    let existing_config = cfg_path.exists();
+    let mut cfg = if existing_config {
         Config::load(&cfg_path)?
     } else {
         Config::default()
     };
 
-    let shim_link = bin.join("claude");
     let self_path = std::env::current_exe().context("resolving current binary")?;
-    if shim_link.exists() || shim_link.symlink_metadata().is_ok() {
-        fs::remove_file(&shim_link).ok();
+    for tool in Tool::ALL {
+        let shim_link = bin.join(tool.binary());
+        if shim_link.exists() || shim_link.symlink_metadata().is_ok() {
+            fs::remove_file(&shim_link).context("removing existing shim")?;
+        }
+        #[cfg(unix)]
+        unix_fs::symlink(&self_path, &shim_link).context("creating shim symlink")?;
     }
-    #[cfg(unix)]
-    unix_fs::symlink(&self_path, &shim_link).context("creating shim symlink")?;
 
     println!("ccdirenv initialized at {}", root.display());
     println!();
 
-    let mode = resolve_mode(&opts);
+    let preserve_mode = existing_config && opts.mode.is_none();
+    let mode = if preserve_mode {
+        Mode::from_config(&cfg)
+    } else {
+        resolve_mode(&opts)
+    };
     println!("discovery mode: {}", mode.name());
-    mode.apply(&mut cfg);
+    if !preserve_mode {
+        mode.apply(&mut cfg);
+    }
     cfg.save(&cfg_path)?;
 
     // Auto-install ghq if any mode that uses it.
@@ -54,6 +65,10 @@ pub fn run(opts: InitOptions) -> Result<()> {
     println!();
     println!("Add to your shell rc:");
     println!("    export PATH=\"{}:$PATH\"", bin.display());
+    println!();
+    println!("Installed shims: claude, codex (install the CLI tools separately).");
+    println!("Log in with: ccdirenv login work --tool claude");
+    println!("             ccdirenv login work --tool codex");
     println!();
     println!("Map owners to profiles, e.g.:");
     println!("    ccdirenv owners map github.com/<your-handle> default");

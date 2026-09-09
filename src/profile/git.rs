@@ -34,10 +34,7 @@ fn find_git_dir(cwd: &Path) -> Option<PathBuf> {
         if candidate.symlink_metadata().is_ok() {
             return Some(candidate);
         }
-        match dir.parent() {
-            Some(p) => dir = p,
-            None => return None,
-        }
+        dir = dir.parent()?;
     }
 }
 

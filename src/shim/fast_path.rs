@@ -3,12 +3,17 @@
 use std::ffi::OsString;
 
 pub fn is_fast_path(args: &[OsString]) -> bool {
-    args.iter().skip(1).filter_map(|s| s.to_str()).any(|tok| {
-        matches!(
-            tok,
-            "--version" | "-V" | "--help" | "-h" | "doctor" | "migrate-installer"
-        )
-    })
+    is_fast_path_for(crate::tool::Tool::Claude, args)
+}
+
+pub fn is_fast_path_for(tool: crate::tool::Tool, args: &[OsString]) -> bool {
+    // Never interpret prompt text or option values as shim control flags.
+    args.len() == 2
+        && args[1].to_str().is_some_and(|tok| {
+            matches!(tok, "--version" | "-V" | "--help" | "-h")
+                || (tool == crate::tool::Tool::Claude
+                    && matches!(tok, "doctor" | "migrate-installer"))
+        })
 }
 
 #[cfg(test)]

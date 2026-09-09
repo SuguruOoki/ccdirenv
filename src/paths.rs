@@ -1,6 +1,6 @@
 //! Path helpers for ~/.ccdirenv and subdirectories.
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use std::path::PathBuf;
 
 pub const MARKER_FILENAME: &str = ".ccdirenv";
@@ -22,6 +22,14 @@ pub fn profiles_dir() -> Result<PathBuf> {
 }
 
 pub fn profile_dir(name: &str) -> Result<PathBuf> {
+    ensure!(
+        !name.is_empty()
+            && name != "."
+            && name != ".."
+            && !name.contains(['/', '\\'])
+            && !name.chars().any(char::is_control),
+        "invalid profile name: expected a single directory name"
+    );
     Ok(profiles_dir()?.join(name))
 }
 

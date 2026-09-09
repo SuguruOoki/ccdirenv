@@ -1,15 +1,16 @@
-use crate::{paths, shim::real};
+use crate::{paths, shim::real, tool::Tool};
 use anyhow::Result;
 use std::env;
 
-pub fn run() -> Result<()> {
+pub fn run(tool: Tool) -> Result<()> {
     let mut ok = true;
     let bin = paths::bin_dir()?;
-    let shim = bin.join("claude");
+    let binary = tool.binary();
+    let shim = bin.join(binary);
 
     println!("shim path: {}", shim.display());
-    if !shim.exists() && shim.symlink_metadata().is_err() {
-        println!("  [FAIL] shim not installed");
+    if !shim.exists() {
+        println!("  [FAIL] shim missing or broken");
         ok = false;
     } else {
         println!("  [OK] shim present");
@@ -23,10 +24,22 @@ pub fn run() -> Result<()> {
         ok = false;
     }
 
-    match real::locate_real_claude(&bin) {
-        Ok(p) => println!("  [OK] real claude at {}", p.display()),
+    match real::locate_real(tool, &bin) {
+        Ok(p) => println!("  [OK] real {binary} at {}", p.display()),
         Err(e) => {
-            println!("  [FAIL] real claude: {e}");
+            println!("  [FAIL] real {binary}: {e}");
+            ok = false;
+        }
+    }
+
+    let expected = std::env::current_exe()?.canonicalize()?;
+    match which::which(binary).and_then(|p| {
+        p.canonicalize()
+            .map_err(|_| which::Error::CannotCanonicalize)
+    }) {
+        Ok(p) if p == expected => println!("  [OK] PATH resolves {binary} to this shim"),
+        _ => {
+            println!("  [FAIL] PATH does not resolve {binary} to this shim; run ccdirenv init and put {} first", bin.display());
             ok = false;
         }
     }

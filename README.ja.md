@@ -6,9 +6,9 @@
 
 **[English](./README.md) | 日本語**
 
-> direnv 風にディレクトリ単位で Claude Code のアカウントを自動切り替え。`cd` するだけで適切なアカウントで `claude` が起動します。[ghq](https://github.com/x-motemen/ghq) でも素の git でも、両方併用でも OK。
+> direnv 風にディレクトリ単位で Claude Code / Codex CLI のアカウントを自動切り替え。`cd` するだけで適切なアカウントで `claude` / `codex` が起動します。[ghq](https://github.com/x-motemen/ghq) でも素の git でも、両方併用でも OK。
 
-`ccdirenv` は現在のディレクトリに応じて Claude Code のアカウントを透過的に選択します。**GitHub の owner（ユーザー / Org）単位で 1 度だけプロファイルを紐付けておけば、その owner 配下のリポジトリは現在も将来 clone するものも含めてすべて正しいアカウントで起動します。** 個人リポは個人アカウント、業務リポは業務アカウント、クライアント案件はクライアントアカウント、というように。
+`ccdirenv` は現在のディレクトリに応じて Claude Code / Codex CLI のアカウントを透過的に選択します。**GitHub の owner（ユーザー / Org）単位で 1 度だけプロファイルを紐付けておけば、その owner 配下のリポジトリは現在も将来 clone するものも含めてすべて正しいアカウントで起動します。** 個人リポは個人アカウント、業務リポは業務アカウント、クライアント案件はクライアントアカウント、というように。
 
 ## 2 つの検出方式
 
@@ -23,8 +23,8 @@
 
 ## 仕組み
 
-1. 各アカウントは独立したプロファイルディレクトリ `~/.ccdirenv/profiles/<name>/` に隔離されます。
-2. `PATH` の前段に置かれた小さな Rust 製シムが、現在のディレクトリからプロファイルを解決し、`CLAUDE_CONFIG_DIR` を設定した上で本物の `claude` バイナリに処理を引き渡します。
+1. プロファイルごとに Claude Code と Codex CLI の設定ディレクトリを分けて保存します（下表参照）。ログインはツールごとに行います。
+2. `PATH` の前段に置かれた小さな Rust 製シムが、現在のディレクトリからプロファイルを解決し、`claude` には `CLAUDE_CONFIG_DIR`、`codex` には `CODEX_HOME` を設定した上で本物のバイナリに処理を引き渡します。
 3. 解決の優先順位（先にマッチしたものが勝ち）:
    1. 環境変数 `CCDIRENV_PROFILE`（強制指定）
    2. 現在ディレクトリまたは親ディレクトリにある `.ccdirenv` マーカーファイル
@@ -32,7 +32,22 @@
    4. **owner 検出**（git / ghq、`discovery_priority` の順で実行）→ `[owners]` ルックアップ
    5. `default_profile`、未指定なら `default`
 
-Claude Code 自身のインストール先・自動更新経路には一切触りません。
+各ツール自身のインストール先・更新経路は維持します。シムのディレクトリと ccdirenv 自身を除外して、PATH 上の本物の実行ファイルを探します。
+
+## 対応ツール
+
+| | Claude Code | Codex CLI |
+|---|---|---|
+| 自動切り替えするコマンド | `claude` | `codex` |
+| 設定する環境変数 | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` |
+| 保存先 | `~/.ccdirenv/profiles/<name>/` | `~/.ccdirenv/profiles/<name>/codex/` |
+| ログイン | `ccdirenv login work` | `ccdirenv login work --tool codex` |
+| 既存設定の移行 | `ccdirenv import work` | `ccdirenv import work --tool codex` |
+| 選択・状態・インストールの確認 | `ccdirenv which / list / doctor` | 各コマンドに `--tool codex` を追加 |
+
+owner マッピング、ディレクトリ glob、マーカー、`CCDIRENV_PROFILE` は両ツールで共通です。既存の Claude 用保存先とコマンドは引き続き使えます。`--tool` の既定値は `claude` です。ccdirenv のプロファイルはアカウントと保存先を選び、Codex 自身の `--profile` は選択された Codex home 内の設定を選びます。
+
+Codex CLI 対応は v0.4.0 から利用できます。ccdirenv を更新後、`ccdirenv init` を再実行すると両ツールのシムが追加されます。
 
 ## インストール
 
@@ -63,6 +78,8 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 git 以外に追加の依存はありません。worktree（`.git` がファイル）も submodule もそのまま動きます。
 
 ## セットアップ
+
+Claude Code / Codex CLI 本体は別途インストールしてください。`ccdirenv init` は両方のシムを作成しますが、利用する CLI だけインストールされていれば動作します。
 
 ```sh
 # 1. プロファイルディレクトリ + シムをセットアップし、検出モードを選ぶ
@@ -99,6 +116,42 @@ Choose [1-4, default 2]:
 ```
 
 あとから `ccdirenv mode set <ghq|git|both|off>` で切替可能。
+
+### Codex のセットアップ・既存環境への追加
+
+このバージョンのインストール後に `ccdirenv init` を再実行すると Codex のシムが追加されます。`--mode` を明示しなければ、既存の検出設定・マッピング・プロファイル内容を維持します。
+
+```sh
+ccdirenv init --no-prompt
+export PATH="$HOME/.ccdirenv/bin:$PATH"
+
+# 任意: ~/.codex を default にコピー。移行先にファイルがある場合は上書きしません。
+ccdirenv import default --tool codex
+# 別の移行元を指定する場合は --from /path/to/codex-home を追加。
+
+ccdirenv login work --tool codex
+ccdirenv owners map github.com/your-employer work
+
+# 業務リポジトリ内で:
+ccdirenv which --tool codex
+codex
+ccdirenv list --tool codex
+ccdirenv doctor --tool codex
+
+# -- 以降をログインコマンドに渡す（デバイス認証、標準入力から API キーを渡す例）:
+ccdirenv login work --tool codex -- --device-auth
+printenv OPENAI_API_KEY | ccdirenv login work --tool codex -- --with-api-key
+```
+
+新しい Codex home は空の状態で作成します。ユーザー設定・ルール・skills・MCP 設定を引き継ぐ場合は `import` するか各 home に設定してください。Claude の設定を Codex 用に自動変換する機能ではありません。独自ラッパーで既に `profiles/<name>/codex` を使っている場合は、その保存先を引き続き使用します。
+
+Codex は `CODEX_HOME` に設定やローカル状態を保存します。認証情報の保存先は `auth.json` または OS の資格情報ストアです。ファイルの移行では OS キーリング内の認証情報は移せないため、必要に応じて再ログインしてください。`list --tool codex` は `codex login status` で状態を確認し、トークンやメールアドレスは表示しません。根拠: [Codex の設定仕様](https://developers.openai.com/codex/config-advanced/)、[認証仕様](https://developers.openai.com/codex/auth/)。
+
+移行時は skills などの通常のシンボリックリンクを維持します。認証ファイルがリンクの場合は、プロファイル間で認証情報が共有されるのを防ぐためエラーにします。移行先は移行元ディレクトリの外に指定してください。Claude プロファイル直下の `codex` は Codex 用の予約ディレクトリです。
+
+プロファイルはシム起動時のカレントディレクトリから選択します。`codex -C` などツール側の作業ディレクトリ指定では変わらないため、先に `cd` するか `CCDIRENV_PROFILE` を指定してください。選択されたツールの `CODEX_HOME` / `CLAUDE_CONFIG_DIR` は継承値よりプロファイルの保存先を優先します。`CCDIRENV_DISABLE=1` では継承値を維持します。他の環境変数はそのまま引き継ぎます。
+
+対応範囲は macOS / Linux でシム経由で起動する CLI です。デスクトップアプリ、IDE 拡張、本体の絶対パスによる起動など、PATH 上のシムを通らない起動では自動切り替えされません。
 
 ## 設定ファイル
 
@@ -183,6 +236,7 @@ ccdirenv use <profile>    # cwd にマーカーで紐付け
 ccdirenv unuse            # マーカーを削除
 ccdirenv config           # ~/.ccdirenv/config.toml を $EDITOR で開く
 ccdirenv doctor           # 診断（PATH, claude 解決, 設定ファイル有無 等）
+ccdirenv doctor --tool codex # Codex CLI の同じ診断
 ```
 
 ## 環境変数
@@ -198,9 +252,9 @@ ccdirenv doctor           # 診断（PATH, claude 解決, 設定ファイル有�
 
 ## トラブルシューティング
 
-`ccdirenv doctor` を実行してください。シム / PATH / 本物の `claude` / 設定ファイルの状態を診断します。
+Claude Code は `ccdirenv doctor`、Codex CLI は `ccdirenv doctor --tool codex` を実行してください。シム / PATH の優先順位 / 本体の実行ファイル / 設定ファイルの状態を診断します。
 
-シムを入れたのに `claude` が違うアカウントを拾ってしまう場合、`~/.ccdirenv/bin` が `~/.local/bin`（あるいは Claude Code のインストール先）**より前** に来ているかを確認。
+シムを入れたのに `claude` / `codex` が違うアカウントを拾ってしまう場合、`~/.ccdirenv/bin` が `~/.local/bin`（あるいは CLI 本体のインストール先）**より前** に来ているかを確認。
 
 意図せず `default` に解決される場合は `ccdirenv mode show` で現在のモードを確認 → `ccdirenv owners list` で owner が登録されているか確認。ghq モードなら `ccdirenv ghq list` の root が想定どおりか、git モードなら `ccdirenv git show` で remote 名を確認。
 
