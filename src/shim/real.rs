@@ -1,4 +1,4 @@
-//! Locate real `claude` in PATH excluding the shim directory.
+//! Locate the selected tool in PATH excluding the shim directory and self.
 
 use anyhow::{anyhow, Context, Result};
 use std::env;
@@ -25,16 +25,21 @@ pub fn path_without(skip: &Path) -> String {
 }
 
 pub fn locate_real_claude(shim_dir: &Path) -> Result<PathBuf> {
+    locate_real(crate::tool::Tool::Claude, shim_dir)
+}
+
+pub fn locate_real(tool: crate::tool::Tool, shim_dir: &Path) -> Result<PathBuf> {
+    let binary = tool.binary();
     let cleaned = path_without(shim_dir);
     let me_canonical = env::current_exe()
         .ok()
         .and_then(|p| std::fs::canonicalize(&p).ok());
 
-    let candidates = which::which_in_all("claude", Some(&cleaned), env::current_dir()?)
-        .context("PATH search failed")?;
+    let candidates = which::which_in_all(binary, Some(&cleaned), env::current_dir()?)
+        .with_context(|| format!("`{binary}` not found in PATH (after skipping shim)"))?;
 
     for candidate in candidates {
-        if candidate == shim_dir.join("claude") {
+        if candidate == shim_dir.join(binary) {
             continue;
         }
         if let Ok(canon) = std::fs::canonicalize(&candidate) {
@@ -45,7 +50,7 @@ pub fn locate_real_claude(shim_dir: &Path) -> Result<PathBuf> {
         return Ok(candidate);
     }
     Err(anyhow!(
-        "`claude` not found in PATH (after skipping shim and self-matches)"
+        "`{binary}` not found in PATH (after skipping shim and self-matches)"
     ))
 }
 

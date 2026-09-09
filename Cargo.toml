@@ -1,14 +1,14 @@
 [package]
 name = "ccdirenv"
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
-description = "direnv-style automatic Claude Code account switching"
+description = "direnv-style automatic Claude Code and Codex CLI account switching"
 repository = "https://github.com/SuguruOoki/ccdirenv"
 homepage = "https://github.com/SuguruOoki/ccdirenv"
 readme = "README.md"
-keywords = ["claude", "claude-code", "profile", "direnv", "cli"]
+keywords = ["claude", "codex", "profile", "direnv", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]

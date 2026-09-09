@@ -6,9 +6,9 @@
 
 **English | [日本語](./README.ja.md)**
 
-> direnv-style automatic Claude Code account switching. The right account, just by `cd`-ing in. Works whether you use [ghq](https://github.com/x-motemen/ghq), plain git, or both.
+> direnv-style automatic Claude Code and Codex CLI account switching. The right account, just by `cd`-ing in. Works whether you use [ghq](https://github.com/x-motemen/ghq), plain git, or both.
 
-`ccdirenv` selects the correct Claude Code account based on the current directory. Map a GitHub owner to a profile once, and every repository under that owner — present and future — uses the right Claude Code account automatically. Personal repos go to your personal account, work repos go to your work account, client repos go to the client account.
+`ccdirenv` selects the correct Claude Code or Codex CLI account based on the current directory. Map a GitHub owner to a profile once, and every repository under that owner — present and future — uses the right account for each tool automatically. Personal repos go to your personal account, work repos go to your work account, client repos go to the client account.
 
 ## Two ways to find the right repo
 
@@ -23,8 +23,8 @@ The same shared owner→profile map (`[owners]`) powers all modes.
 
 ## How it works
 
-1. Each Claude Code account lives in an isolated profile directory under `~/.ccdirenv/profiles/<name>/`.
-2. A small Rust shim placed earlier in `PATH` resolves the profile for the current directory and sets `CLAUDE_CONFIG_DIR` before handing off to the real `claude` binary.
+1. A profile groups separate configuration directories for Claude Code and Codex CLI (see the table below). Log in to each tool separately.
+2. Rust shims placed earlier in `PATH` resolve the profile for the current directory and set `CLAUDE_CONFIG_DIR` for `claude` or `CODEX_HOME` for `codex` before handing off to the real binary.
 3. Resolution order (first match wins):
    1. `CCDIRENV_PROFILE` environment variable (force override)
    2. `.ccdirenv` marker file in the current directory or any parent
@@ -32,7 +32,22 @@ The same shared owner→profile map (`[owners]`) powers all modes.
    4. **owner discovery** (git and/or ghq, in `discovery_priority` order) → `[owners]` lookup
    5. `default_profile` from `config.toml`, falling back to `default`
 
-Claude Code's own installation and auto-update path are never touched — the shim only adds an entry earlier in `PATH` and execs whatever `claude` it finds after stripping itself.
+The tools' own installations and update paths are left intact. The shims find the real executable on `PATH`, excluding the shim directory and links to ccdirenv itself.
+
+## Supported tools
+
+| | Claude Code | Codex CLI |
+|---|---|---|
+| Command intercepted | `claude` | `codex` |
+| Configuration variable | `CLAUDE_CONFIG_DIR` | `CODEX_HOME` |
+| Profile directory | `~/.ccdirenv/profiles/<name>/` | `~/.ccdirenv/profiles/<name>/codex/` |
+| Log in | `ccdirenv login work` | `ccdirenv login work --tool codex` |
+| Import existing configuration | `ccdirenv import work` | `ccdirenv import work --tool codex` |
+| Inspect selection / status / installation | `ccdirenv which / list / doctor` | Add `--tool codex` to each command |
+
+Both tools use the same owner mappings, directory globs, markers, and `CCDIRENV_PROFILE` override. Existing Claude profile paths and commands remain compatible; `--tool` defaults to `claude`. ccdirenv profiles select accounts and configuration directories; Codex's own `--profile` option selects configuration within the chosen Codex home.
+
+Codex CLI support is available starting with v0.4.0. Upgrade ccdirenv and run `ccdirenv init` again to install both shims.
 
 ## Install
 
@@ -64,6 +79,8 @@ git mode requires nothing beyond `git` itself. Worktrees (`.git` as a file) and 
 
 ## Setup
 
+Install Claude Code, Codex CLI, or both separately. `ccdirenv init` installs both shims; only the CLI you use needs to be installed.
+
 ```sh
 # 1. Create the profile directory layout, install the shim, pick a discovery mode.
 #    `ccdirenv init` is interactive; pass --mode=git|ghq|both|off to skip the prompt.
@@ -85,7 +102,7 @@ ccdirenv owners map github.com/your-employer         work
 ccdirenv owners map github.com/a-client-org          client-acme
 ```
 
-That's it. Every repository under those owners now uses the right Claude Code account the moment you `cd` into it.
+That's it. Every repository under those owners now uses the right account for the selected tool the moment you `cd` into it.
 
 The `init` prompt:
 
@@ -99,6 +116,42 @@ Choose [1-4, default 2]:
 ```
 
 Switch later with `ccdirenv mode set <ghq|git|both|off>`.
+
+### Codex setup and upgrading
+
+After installing this version, run `ccdirenv init` again to add the Codex shim. Existing mappings, discovery settings, and profile contents are preserved unless you explicitly pass `--mode`.
+
+```sh
+ccdirenv init --no-prompt
+export PATH="$HOME/.ccdirenv/bin:$PATH"
+
+# Optional: copy ~/.codex into the default profile; refuses a nonempty destination.
+ccdirenv import default --tool codex
+# Use --from /path/to/codex-home for a custom source.
+
+ccdirenv login work --tool codex
+ccdirenv owners map github.com/your-employer work
+
+# Inside a work repository:
+ccdirenv which --tool codex
+codex
+ccdirenv list --tool codex
+ccdirenv doctor --tool codex
+
+# Forward login options after -- (device login or API key via stdin):
+ccdirenv login work --tool codex -- --device-auth
+printenv OPENAI_API_KEY | ccdirenv login work --tool codex -- --with-api-key
+```
+
+New Codex homes start empty. Import or configure each home to bring over user settings, rules, skills, and MCP configuration; ccdirenv does not convert Claude configuration into Codex configuration. The existing `profiles/<name>/codex` layout used by custom wrappers is reused.
+
+Codex stores configuration and local state under `CODEX_HOME`. Credentials may be in `auth.json` or the OS credential store; importing files does not migrate OS keyring entries. Log in again if needed. `list --tool codex` asks `codex login status` and reports status without displaying token contents or claiming an account email. See [Codex configuration](https://developers.openai.com/codex/config-advanced/) and [authentication](https://developers.openai.com/codex/auth/).
+
+Imports preserve ordinary symlinks (for example shared skills), but refuse symlinked credential files to prevent sharing authentication between profiles. Targets must be outside the source directory. The `codex` child of a Claude profile is reserved for Codex.
+
+Profile selection uses the shell's current directory when the shim starts. A tool's own directory-changing option such as `codex -C` does not change this selection; `cd` first or set `CCDIRENV_PROFILE` explicitly. Selection overrides an inherited `CODEX_HOME` / `CLAUDE_CONFIG_DIR` for the selected tool; `CCDIRENV_DISABLE=1` preserves them. Other inherited environment variables are passed through.
+
+This integration covers CLI invocations through the shims on macOS and Linux. Desktop apps, IDE extensions, and absolute paths to the real executable that bypass `PATH` do not automatically switch through ccdirenv.
 
 ## Configuration
 
@@ -184,30 +237,32 @@ ccdirenv use <profile>    # bind cwd to a profile via .ccdirenv marker
 ccdirenv unuse            # remove the marker
 ccdirenv config           # open ~/.ccdirenv/config.toml in $EDITOR
 ccdirenv doctor           # diagnostics (PATH order, real claude resolvability, etc.)
+ccdirenv doctor --tool codex # the same diagnostics for Codex CLI
 ```
 
-Once the shim is on `PATH`, running `claude` in any directory automatically launches against the resolved profile.
+Once the shims are on `PATH`, running `claude` or `codex` launches against the resolved profile.
 
 ## Environment variables
 
 | Variable | Effect |
 |---|---|
 | `CCDIRENV_PROFILE=<name>` | Force a specific profile for this invocation, ignoring marker / config / ghq. |
-| `CCDIRENV_DISABLE=1` | Skip resolution entirely — the shim transparently execs the real `claude` with the inherited `CLAUDE_CONFIG_DIR`. Useful for debugging. |
-| `CCDIRENV_DEBUG=1` | Print the chosen profile, profile dir, and real claude path to stderr before exec. |
+| `CCDIRENV_DISABLE=1` | Skip resolution entirely — the shim transparently execs the real tool with its inherited configuration variable. Useful for debugging. |
+| `CCDIRENV_DEBUG=1` | Print the chosen profile, profile dir, and real tool path to stderr before exec. |
 | `CCDIRENV_HOME=<path>` | Override `~/.ccdirenv/` as the data root (useful for testing). |
 | `GHQ_ROOT=<path>` | Honoured for ghq root detection when `[ghq] root` is not set. |
 
 ## Troubleshooting
 
-Run `ccdirenv doctor`. It reports:
+Run `ccdirenv doctor` for Claude Code or `ccdirenv doctor --tool codex` for Codex CLI. Each reports:
 
-- whether the shim is installed at `~/.ccdirenv/bin/claude`
+- whether the shim is installed at `~/.ccdirenv/bin/<tool>`
 - whether `PATH` includes `~/.ccdirenv/bin`
-- whether a non-shim `claude` binary is reachable on `PATH`
+- whether a non-shim binary for the selected tool is reachable on `PATH`
+- whether `PATH` resolves the selected command to this shim (detecting shadowed or stale shims)
 - whether `config.toml` exists
 
-If the shim is installed but `claude` keeps picking up the wrong account, make sure `~/.ccdirenv/bin` comes *before* `~/.local/bin` (or wherever Claude Code installed itself) in your `PATH`.
+If the shim is installed but the tool keeps picking up the wrong account, make sure `~/.ccdirenv/bin` comes *before* `~/.local/bin` (or wherever the real CLI is installed) in your `PATH`.
 
 If a directory unexpectedly resolves to `default`, run `ccdirenv mode show` to confirm the active mode, then `ccdirenv owners list` to confirm the owner is mapped. For ghq mode, also check that your ghq root matches what `ccdirenv ghq list` reports. For git mode, ensure the repo has the configured remote (`ccdirenv git show`).
 

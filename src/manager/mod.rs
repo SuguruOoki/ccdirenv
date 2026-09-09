@@ -20,14 +20,22 @@ pub fn run() -> Result<()> {
                 no_prompt,
             })
         }
-        Cmd::Login { profile } => cmd::login::run(profile),
-        Cmd::List => cmd::list::run(),
-        Cmd::Which => cmd::which::run(),
+        Cmd::Login {
+            profile,
+            tool,
+            args,
+        } => cmd::login::run(profile, tool, args),
+        Cmd::List { tool } => cmd::list::run(tool),
+        Cmd::Which { tool } => cmd::which::run(tool),
         Cmd::Use { profile } => cmd::use_cmd::run(&profile),
         Cmd::Unuse => cmd::unuse::run(),
         Cmd::Config => cmd::config_cmd::run(),
-        Cmd::Doctor => cmd::doctor::run(),
-        Cmd::Import { profile } => cmd::import::run(&profile),
+        Cmd::Doctor { tool } => cmd::doctor::run(tool),
+        Cmd::Import {
+            profile,
+            tool,
+            from,
+        } => cmd::import::run(&profile, tool, from),
         Cmd::Owners(OwnersCmd::List) => cmd::owners::list(),
         Cmd::Owners(OwnersCmd::Map { owner, profile }) => cmd::owners::map(&owner, &profile),
         Cmd::Owners(OwnersCmd::Unmap { owner }) => cmd::owners::unmap(&owner),
